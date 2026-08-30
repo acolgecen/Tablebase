@@ -1,6 +1,6 @@
 // App orchestration for one window: wires DOM events to the API and keeps the
 // UI in sync with `state`. A window is an independent environment that can hold
-// several files (queried as `data`, or `data1`/`data2`/… when more than one).
+// several files (queried as `data`, then `data1`/`data2`/…, or custom names).
 // Flow: open file(s) -> preview -> (edit SQL -> run) -> paginate -> export.
 
 import * as api from "./api.js";
@@ -38,6 +38,7 @@ const ui = {
   reimportTarget: el("reimport-target"),
   optDelimiter: el("opt-delimiter"),
   optHeader: el("opt-header"),
+  optAbbreviation: el("opt-abbreviation"),
   welcome: el("welcome"),
   welcomeOpen: el("welcome-open"),
   welcomeNewWindow: el("welcome-newwindow"),
@@ -104,7 +105,7 @@ function renderChip(file) {
   table.className = "file-chip-table";
   table.textContent = file.table;
 
-  const opts = iconButton("i-options", "Import options…", "opts");
+  const opts = iconButton("i-options", "File configuration…", "opts");
   opts.dataset.path = file.source_path;
   const close = iconButton("i-close", `Close ${file.file_name}`, "close");
   close.dataset.path = file.source_path;
@@ -121,7 +122,7 @@ function iconButton(symbol, title, kind) {
   return btn;
 }
 
-// --- open / close / reimport --------------------------------------------
+// --- open / close / configure -------------------------------------------
 async function addFiles() {
   setBusy("Opening file(s)");
   try {
@@ -138,8 +139,8 @@ async function addFiles() {
       editor.setValue(sql);
       runQuery(sql, 0, false);
     } else {
-      // Files were added alongside existing ones — the table names shifted to
-      // data1/data2/…, so surface the new set instead of clobbering their SQL.
+      // Additional files keep existing abbreviations stable, so surface the
+      // complete set without clobbering the current SQL.
       setStatus(`Added ${added} file(s). Tables: ${tableList()}.`);
     }
   } catch (err) {
@@ -169,26 +170,46 @@ function openReimport(path) {
   reimportPath = path;
   const file = state.env.files.find((f) => f.source_path === path);
   ui.reimportTarget.textContent = file ? `"${file.file_name}"` : "the file";
+  ui.optAbbreviation.value = file?.table ?? "";
+  ui.optAbbreviation.setCustomValidity("");
+  ui.optDelimiter.value = file?.import_options?.delimiter ?? "";
+  const header = file?.import_options?.header;
+  ui.optHeader.value = header === null || header === undefined ? "" : String(header);
+  ui.dialog.returnValue = "";
   ui.dialog.showModal();
 }
 
 async function applyReimport() {
   if (!reimportPath) return;
+  const path = reimportPath;
   const delimiter = ui.optDelimiter.value || null;
   const headerRaw = ui.optHeader.value;
   const header = headerRaw === "" ? null : headerRaw === "true";
-  setBusy("Re-importing");
+  const abbreviation = ui.optAbbreviation.value.trim();
+  setBusy("Updating file");
   try {
-    const info = await api.reimport(reimportPath, { delimiter, header });
+    const info = await api.configureFile(path, { delimiter, header }, abbreviation);
+    reimportPath = null;
     if (!renderEnv(info)) return;
-    setStatus(`Re-imported. Tables: ${tableList()}.`);
+    setStatus(`Updated. Tables: ${tableList()}.`);
   } catch (err) {
     showError(err);
     syncEnv();
-  } finally {
-    reimportPath = null;
+    if (err?.kind === "invalid_abbreviation") {
+      reimportPath = path;
+      ui.optAbbreviation.setCustomValidity(err.message);
+      ui.dialog.returnValue = "";
+      ui.dialog.showModal();
+      ui.optAbbreviation.reportValidity();
+    } else {
+      reimportPath = null;
+    }
   }
 }
+
+ui.optAbbreviation.addEventListener("input", () => {
+  ui.optAbbreviation.setCustomValidity("");
+});
 
 // Pull the authoritative environment snapshot from the backend (used to
 // resynchronise the UI after an error left it uncertain).

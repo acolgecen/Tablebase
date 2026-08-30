@@ -31,8 +31,7 @@ pub struct FileInfo {
     pub id: u64,
     pub source_path: String,
     pub file_name: String,
-    /// The SQL table name this file is queried as within its window: `data`
-    /// when it is the only file, otherwise `data1`, `data2`, … in open order.
+    /// The editable SQL abbreviation used to query this file.
     pub table: String,
     pub columns: Vec<ColumnInfo>,
     pub row_count: u64,

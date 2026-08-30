@@ -28,15 +28,16 @@ pub fn close_path(state: &AppState, window: &str, path: &Path) -> AppResult<Envi
     Ok(environment.info())
 }
 
-pub fn reimport_path(
+pub fn configure_path(
     state: &AppState,
     window: &str,
     path: &Path,
     options: &ImportOptions,
+    abbreviation: &str,
 ) -> AppResult<EnvironmentInfo> {
     let environment = state.env(window)?;
     let mut environment = environment.lock().map_err(|_| AppError::lock_poisoned())?;
-    environment.reimport_file(path, options)?;
+    environment.configure_file(path, options, abbreviation)?;
     Ok(environment.info())
 }
 

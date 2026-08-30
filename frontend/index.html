@@ -153,11 +153,25 @@
     <!-- Status / errors -->
     <footer id="status" class="status"></footer>
 
-    <!-- Import options dialog -->
+    <!-- File configuration dialog -->
     <dialog id="reimport-dialog">
       <form method="dialog" class="reimport-form">
-        <h3>Import options</h3>
-        <p class="muted">Override auto-detection, then re-import <span id="reimport-target">the file</span>.</p>
+        <h3>File configuration</h3>
+        <p class="muted">Configure <span id="reimport-target">the file</span>.</p>
+        <label>
+          SQL abbreviation
+          <input
+            id="opt-abbreviation"
+            class="select"
+            type="text"
+            maxlength="64"
+            pattern="[A-Za-z_][A-Za-z0-9_]*"
+            title="Use letters, numbers, or underscores, starting with a letter or underscore."
+            autocomplete="off"
+            spellcheck="false"
+            required
+          />
+        </label>
         <label>
           Delimiter
           <select id="opt-delimiter" class="select">
@@ -178,7 +192,7 @@
         </label>
         <div class="reimport-actions">
           <button value="cancel" class="btn">Cancel</button>
-          <button id="reimport-apply" value="apply" class="btn btn-primary">Re-import</button>
+          <button id="reimport-apply" value="apply" class="btn btn-primary">Apply</button>
         </div>
       </form>
     </dialog>

@@ -23,6 +23,9 @@ pub enum AppError {
     Export(String),
     /// A superseded query was interrupted or its session expired.
     QuerySession(String),
+    /// A requested file abbreviation is invalid, reserved, or already used.
+    #[serde(rename = "invalid_abbreviation")]
+    InvalidAbbreviation(String),
     /// Anything else we didn't model explicitly.
     Internal(String),
 }
@@ -51,6 +54,7 @@ impl std::fmt::Display for AppError {
             AppError::Cache(m) => ("cache", m),
             AppError::Export(m) => ("export", m),
             AppError::QuerySession(m) => ("query_session", m),
+            AppError::InvalidAbbreviation(m) => ("invalid_abbreviation", m),
             AppError::Internal(m) => ("internal", m),
         };
         write!(f, "[{kind}] {msg}")
@@ -68,5 +72,17 @@ impl From<duckdb::Error> for AppError {
 impl From<std::io::Error> for AppError {
     fn from(e: std::io::Error) -> Self {
         AppError::Io(e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abbreviation_errors_have_a_stable_frontend_kind() {
+        let value = serde_json::to_value(AppError::InvalidAbbreviation("reserved".into())).unwrap();
+        assert_eq!(value["kind"], "invalid_abbreviation");
+        assert_eq!(value["message"], "reserved");
     }
 }

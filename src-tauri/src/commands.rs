@@ -49,19 +49,21 @@ pub async fn close_file(
 }
 
 #[tauri::command]
-pub async fn reimport(
+pub async fn configure_file(
     app: AppHandle,
     window: WebviewWindow,
     path: String,
     options: ImportOptions,
+    abbreviation: String,
 ) -> AppResult<EnvironmentInfo> {
     let label = window.label().to_string();
     run_off_main(move || {
-        application::reimport_path(
+        application::configure_path(
             &app.state::<AppState>(),
             &label,
             std::path::Path::new(&path),
             &options,
+            &abbreviation,
         )
     })
     .await

@@ -50,7 +50,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::add_files,
             commands::close_file,
-            commands::reimport,
+            commands::configure_file,
             commands::env_info,
             commands::start_query,
             commands::fetch_page,

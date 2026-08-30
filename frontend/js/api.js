@@ -27,9 +27,9 @@ export function closeFile(path) {
   return invoke("close_file", { path }).then(contract.environmentInfo);
 }
 
-/** Re-ingest one file with explicit { delimiter, header } options. Resolves to EnvironmentInfo. */
-export function reimport(path, options) {
-  return invoke("reimport", { path, options }).then(contract.environmentInfo);
+/** Configure one file's SQL abbreviation and import options. */
+export function configureFile(path, options, abbreviation) {
+  return invoke("configure_file", { path, options, abbreviation }).then(contract.environmentInfo);
 }
 
 /** Current environment snapshot for this window. Resolves to EnvironmentInfo. */

@@ -22,23 +22,25 @@ Each window is an independent workspace with its own files, SQL editor, and quer
 
 The welcome screen provides actions to open files, create another window, or quit. The native file picker supports multi-selection and accepts `.csv`, `.tsv`, and `.txt` files.
 
-Tablebase exposes opened files as SQL views:
+Tablebase exposes opened files as SQL views with stable abbreviations:
 
-- One open file is named `data`.
-- Multiple open files are named `data1`, `data2`, … in their displayed order.
+- The first file is named `data` automatically.
+- Additional files are named `data1`, `data2`, … automatically.
+- Use a file chip's configuration button to choose a custom abbreviation.
 
-The first set of opened files is previewed automatically with `SELECT * FROM data` or `SELECT * FROM data1`. Each file chip shows its current SQL view name and provides actions to change import options or close the file.
+The first set of opened files is previewed automatically with `SELECT * FROM data`. Each file chip shows its current SQL abbreviation and provides actions to configure or close the file.
 
-Adding or closing a file can rename views between `data` and `data1`/`data2`/…. Existing SQL is not rewritten automatically, so update the query or use **Reset** after the set of open files changes.
+Existing abbreviations remain stable when files are added or closed. Newly added files receive the next automatic `dataN` abbreviation.
 
-### Import options
+### File configuration
 
-Imports use DuckDB's auto-detection by default. The per-file import dialog can override:
+Imports use DuckDB's auto-detection by default. The per-file configuration dialog can set:
 
+- **SQL abbreviation:** a unique identifier used in queries
 - **Delimiter:** comma, tab, semicolon, or pipe
 - **Header row:** auto-detect, present, or absent
 
-Re-importing switches that source to the immutable cache artifact produced by the selected options.
+Abbreviations use letters, numbers, and underscores and cannot start with a number. DuckDB-reserved SQL words and abbreviations already used by another open file are rejected. Applying import changes switches that source to the immutable cache artifact produced by the selected options.
 
 ### Query and paginate
 

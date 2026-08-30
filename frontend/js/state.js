@@ -48,7 +48,7 @@ export function hasFiles() {
   return state.env.files.length > 0;
 }
 
-/** The table name to preview first: `data`, or `data1` when several are open. */
+/** The first file's current automatic or user-selected SQL abbreviation. */
 export function firstTable() {
   return state.env.files[0]?.table ?? "data";
 }
