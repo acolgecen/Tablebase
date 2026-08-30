@@ -1,0 +1,11 @@
+id,name,department,salary,hired,active
+1,Alice Chen,Engineering,145000.50,2019-03-12,true
+2,Bob Martins,Engineering,128000.00,2020-07-01,true
+3,Carol Diaz,Design,,2021-01-19,true
+4,Dan Webb,Sales,98000.75,2018-11-30,false
+5,Eve Park,Sales,102500.00,2022-05-23,true
+6,Frank Liu,Design,87000.00,2023-02-14,true
+7,Grace Okoye,Engineering,156000.25,2017-09-05,true
+8,Hank Yu,Marketing,76000.00,2024-06-10,false
+9,Ivy Brooks,Marketing,,2020-12-01,true
+10,Jack Reed,Engineering,134000.00,2019-08-22,true

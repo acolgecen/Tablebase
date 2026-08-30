@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for every Tablebase window (main + runtime-created).",
+  "windows": ["main", "win-*"],
+  "permissions": [
+    "core:default"
+  ]
+}
