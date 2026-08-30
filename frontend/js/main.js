@@ -1,7 +1,6 @@
-// App orchestration for one window: wires DOM events to the API and keeps the
-// UI in sync with `state`. A window is an independent environment that can hold
-// several files (queried as `data`, then `data1`/`data2`/…, or custom names).
-// Flow: open file(s) -> preview -> (edit SQL -> run) -> paginate -> export.
+// One window owns a shared file environment and multiple independent query
+// tabs. Each tab retains its SQL, page, result, count, and immutable backend
+// session until the tab is closed.
 
 import * as api from "./api.js";
 import { renderGrid, renderEmpty } from "./grid.js";
@@ -9,7 +8,13 @@ import { createEditor } from "./editor.js";
 import { initSplitter } from "./splitter.js";
 import {
   state,
+  activeTab,
+  queryTab,
+  createQueryTab,
+  selectQueryTab,
+  closeQueryTab,
   hasFiles,
+  hasPersistedResults,
   previewSql,
   tableList,
   canGoNext,
@@ -19,12 +24,13 @@ import {
   acceptEnvironment,
 } from "./state.js";
 
-// --- element handles -----------------------------------------------------
 const el = (id) => document.getElementById(id);
 const ui = {
   open: el("open-btn"),
-  newWindow: el("newwindow-btn"),
   files: el("files"),
+  fileCount: el("file-count"),
+  tabs: el("query-tabs"),
+  newTab: el("new-tab-btn"),
   run: el("run-btn"),
   reset: el("reset-btn"),
   pageInfo: el("page-info"),
@@ -41,60 +47,148 @@ const ui = {
   optAbbreviation: el("opt-abbreviation"),
   welcome: el("welcome"),
   welcomeOpen: el("welcome-open"),
-  welcomeNewWindow: el("welcome-newwindow"),
   welcomeQuit: el("welcome-quit"),
 };
 
-// Monokai-highlighted SQL editor (replaces the raw textarea value access).
 const editor = createEditor(el("editor"), {
-  onRun: () => runQuery(editor.getValue(), 0, false),
+  onRun: () => {
+    const tab = activeTab();
+    if (tab) runQuery(tab, editor.getValue(), 0, false);
+  },
+  onChange: (sql) => {
+    const tab = activeTab();
+    if (tab) tab.draftSql = sql;
+  },
 });
 initSplitter(el("splitter"));
 
-// The file whose "Import options" dialog is currently open.
 let reimportPath = null;
 
-// --- status helpers ------------------------------------------------------
-function setStatus(text, kind = "") {
-  ui.status.textContent = text;
-  ui.status.className = `status ${kind}`.trim();
+function errorMessage(err) {
+  return err && err.message ? `${err.kind}: ${err.message}` : String(err);
 }
-function setBusy(text) {
-  ui.status.textContent = text;
-  ui.status.className = "status busy";
+
+function setTabStatus(tab, text, kind = "") {
+  tab.status = text;
+  tab.statusKind = kind;
+  tab.busy = kind === "busy";
+  if (tab === activeTab()) renderStatus(tab);
+  renderTabs();
 }
-function showError(err) {
-  // Backend errors are { kind, message }; fall back to string form otherwise.
-  const msg = err && err.message ? `${err.kind}: ${err.message}` : String(err);
-  setStatus(msg, "error");
+
+function renderStatus(tab) {
+  ui.status.textContent = tab.status;
+  ui.status.className = `status ${tab.statusKind}`.trim();
+}
+
+function showError(tab, err) {
+  setTabStatus(tab, errorMessage(err), "error");
+}
+
+function renderTabs() {
+  ui.tabs.replaceChildren();
+  for (const tab of state.tabs) {
+    const item = document.createElement("div");
+    item.className = "query-tab";
+    if (tab.id === state.activeTabId) item.classList.add("active");
+    if (tab.lastResult) item.classList.add("has-results");
+    if (tab.busy) item.classList.add("busy");
+    item.dataset.tabId = tab.id;
+    item.setAttribute("role", "tab");
+    item.setAttribute("aria-selected", String(tab.id === state.activeTabId));
+    item.tabIndex = tab.id === state.activeTabId ? 0 : -1;
+
+    const stateDot = document.createElement("span");
+    stateDot.className = "query-tab-state";
+    const label = document.createElement("span");
+    label.className = "query-tab-label";
+    label.textContent = tab.title;
+    const close = document.createElement("button");
+    close.className = "query-tab-close";
+    close.dataset.closeTab = tab.id;
+    close.title = `Close ${tab.title}`;
+    close.setAttribute("aria-label", `Close ${tab.title}`);
+    close.innerHTML = '<svg class="ico"><use href="#i-close" /></svg>';
+    item.append(stateDot, label, close);
+    ui.tabs.appendChild(item);
+  }
+}
+
+function renderActiveTab({ focus = false } = {}) {
+  const tab = activeTab();
+  if (!tab) return;
+  editor.setValue(tab.draftSql);
+  ui.run.disabled = !hasFiles();
+  ui.reset.disabled = !hasFiles();
+
+  if (tab.lastResult) {
+    renderGrid(ui.grid, tab.lastResult, tab.page * state.pageSize);
+    ui.export.disabled = tab.queryId === null;
+  } else {
+    renderEmpty(
+      ui.grid,
+      hasFiles()
+        ? "Write a query and press ⌘↵ to run it."
+        : "Open a CSV or TSV file to get started.",
+    );
+    ui.export.disabled = true;
+  }
+  updatePager(tab);
+  renderStatus(tab);
+  if (focus) editor.focus();
+}
+
+function updateWelcome() {
+  // Removing a source must not cover results already retained by a query tab.
+  ui.welcome.hidden = hasFiles() || hasPersistedResults();
+}
+
+function activateTab(id, focus = false) {
+  const current = activeTab();
+  if (current) current.draftSql = editor.getValue();
+  if (!selectQueryTab(id)) return;
+  renderTabs();
+  renderActiveTab({ focus });
+}
+
+function addQueryTab({ sql = "", focus = true } = {}) {
+  const current = activeTab();
+  if (current) current.draftSql = editor.getValue();
+  const tab = createQueryTab(sql);
+  renderTabs();
+  renderActiveTab({ focus });
+  return tab;
+}
+
+function removeQueryTab(id) {
+  const wasActive = state.activeTabId === id;
+  const tab = queryTab(id);
+  if (!tab) return;
+  tab.activeQueryRequest += 1;
+  if (tab.queryId !== null) api.cancelQuery(tab.queryId).catch(() => {});
+  closeQueryTab(id);
+  if (state.tabs.length === 0) createQueryTab();
+  renderTabs();
+  if (wasActive) renderActiveTab({ focus: true });
+  updateWelcome();
 }
 
 // --- environment rendering ----------------------------------------------
-// Render the window's open-files bar and reconcile dependent UI. This is the
-// single place the file chips and empty/welcome states are derived from `state`.
 function renderEnv(info) {
   if (!acceptEnvironment(info)) return false;
-  ui.welcome.hidden = hasFiles();
-
   ui.files.replaceChildren();
-  for (const file of info.files) {
-    ui.files.appendChild(renderChip(file));
-  }
-
-  const enabled = hasFiles();
-  ui.run.disabled = !enabled;
-  ui.reset.disabled = !enabled;
-  if (!enabled) {
-    // No files: nothing to query, so clear results and the editor helper.
-    setResultActionsEnabled(false);
-    renderEmpty(ui.grid, "Open a CSV or TSV file to get started.");
-  }
+  for (const file of info.files) ui.files.appendChild(renderFileCard(file));
+  ui.fileCount.textContent = String(info.files.length);
+  ui.run.disabled = !hasFiles();
+  ui.reset.disabled = !hasFiles();
+  updateWelcome();
+  if (!activeTab()?.lastResult) renderActiveTab();
   return true;
 }
 
-function renderChip(file) {
-  const chip = document.createElement("span");
-  chip.className = "file-chip";
+function renderFileCard(file) {
+  const card = document.createElement("div");
+  card.className = "file-chip";
 
   const name = document.createElement("span");
   name.className = "file-chip-name";
@@ -104,71 +198,77 @@ function renderChip(file) {
   const table = document.createElement("span");
   table.className = "file-chip-table";
   table.textContent = file.table;
+  table.title = `SQL table: ${file.table}`;
 
   const opts = iconButton("i-options", "File configuration…", "opts");
   opts.dataset.path = file.source_path;
   const close = iconButton("i-close", `Close ${file.file_name}`, "close");
   close.dataset.path = file.source_path;
-
-  chip.append(name, table, opts, close);
-  return chip;
+  card.append(name, table, opts, close);
+  return card;
 }
 
 function iconButton(symbol, title, kind) {
-  const btn = document.createElement("button");
-  btn.className = `file-chip-btn ${kind}`;
-  btn.title = title;
-  btn.innerHTML = `<svg class="ico"><use href="#${symbol}" /></svg>`;
-  return btn;
+  const button = document.createElement("button");
+  button.className = `file-chip-btn ${kind}`;
+  button.title = title;
+  button.setAttribute("aria-label", title);
+  button.innerHTML = `<svg class="ico"><use href="#${symbol}" /></svg>`;
+  return button;
 }
 
-// --- open / close / configure -------------------------------------------
 async function addFiles() {
-  setBusy("Opening file(s)");
+  const tab = activeTab();
+  if (tab) setTabStatus(tab, "Opening file(s)", "busy");
   try {
     const before = state.env.files.length;
     const info = await api.addFiles();
     if (!renderEnv(info)) return;
     const added = info.files.length - before;
-    if (added <= 0) return setStatus("No file added.");
+    if (added <= 0) {
+      if (tab) setTabStatus(tab, "No file added.");
+      return;
+    }
 
     if (before === 0) {
-      // First file(s) in this window: preview the first table straight away.
+      let target = activeTab();
+      if (target.lastResult || target.queryId !== null || target.draftSql.trim()) {
+        target = addQueryTab({ focus: false });
+      }
       const sql = previewSql();
-      state.autoSql = sql;
-      editor.setValue(sql);
-      runQuery(sql, 0, false);
+      target.autoSql = sql;
+      target.draftSql = sql;
+      if (target === activeTab()) editor.setValue(sql);
+      runQuery(target, sql, 0, false);
     } else {
-      // Additional files keep existing abbreviations stable, so surface the
-      // complete set without clobbering the current SQL.
-      setStatus(`Added ${added} file(s). Tables: ${tableList()}.`);
+      setTabStatus(activeTab(), `Added ${added} file(s). Tables: ${tableList()}.`);
     }
   } catch (err) {
-    showError(err);
+    if (tab) showError(tab, err);
     syncEnv();
   }
 }
 
 async function closeFile(path) {
-  setBusy("Closing file");
+  const tab = activeTab();
+  setTabStatus(tab, "Closing file", "busy");
   try {
     const info = await api.closeFile(path);
     if (!renderEnv(info)) return;
     if (!hasFiles()) {
-      clearResults();
-      setStatus("All files closed.");
+      setTabStatus(tab, "All files closed. Existing query results remain available.");
     } else {
-      setStatus(`Closed file. Tables: ${tableList()}.`);
+      setTabStatus(tab, `Closed file. Tables: ${tableList()}.`);
     }
   } catch (err) {
-    showError(err);
+    showError(tab, err);
     syncEnv();
   }
 }
 
 function openReimport(path) {
   reimportPath = path;
-  const file = state.env.files.find((f) => f.source_path === path);
+  const file = state.env.files.find((item) => item.source_path === path);
   ui.reimportTarget.textContent = file ? `"${file.file_name}"` : "the file";
   ui.optAbbreviation.value = file?.table ?? "";
   ui.optAbbreviation.setCustomValidity("");
@@ -181,19 +281,20 @@ function openReimport(path) {
 
 async function applyReimport() {
   if (!reimportPath) return;
+  const tab = activeTab();
   const path = reimportPath;
   const delimiter = ui.optDelimiter.value || null;
   const headerRaw = ui.optHeader.value;
   const header = headerRaw === "" ? null : headerRaw === "true";
   const abbreviation = ui.optAbbreviation.value.trim();
-  setBusy("Updating file");
+  setTabStatus(tab, "Updating file", "busy");
   try {
     const info = await api.configureFile(path, { delimiter, header }, abbreviation);
     reimportPath = null;
     if (!renderEnv(info)) return;
-    setStatus(`Updated. Tables: ${tableList()}.`);
+    setTabStatus(tab, `Updated. Tables: ${tableList()}.`);
   } catch (err) {
-    showError(err);
+    showError(tab, err);
     syncEnv();
     if (err?.kind === "invalid_abbreviation") {
       reimportPath = path;
@@ -207,148 +308,187 @@ async function applyReimport() {
   }
 }
 
-ui.optAbbreviation.addEventListener("input", () => {
-  ui.optAbbreviation.setCustomValidity("");
-});
-
-// Pull the authoritative environment snapshot from the backend (used to
-// resynchronise the UI after an error left it uncertain).
 async function syncEnv() {
   try {
     renderEnv(await api.envInfo());
   } catch {
-    // Best-effort: leave the UI as-is if even the snapshot fails.
+    // Best-effort: leave the last known environment visible.
   }
 }
 
-// --- query + pagination --------------------------------------------------
-async function runQuery(sql, page, reuseSession) {
-  if (!hasFiles()) return setStatus("Open a file first.");
-  const requestId = beginQueryRequest();
-  const previousQueryId = state.queryId;
-  setBusy("Running query");
+// --- query, pagination, and export ---------------------------------------
+async function runQuery(tab, sql, page, reuseSession) {
+  if (!reuseSession && !hasFiles()) {
+    setTabStatus(tab, "Open a file first.");
+    return;
+  }
+  const requestId = beginQueryRequest(tab);
+  const previousQueryId = tab.queryId;
+  setTabStatus(tab, reuseSession ? "Loading page" : "Running query", "busy");
   try {
-    const response = reuseSession && state.queryId !== null
-      ? await api.fetchPage(state.queryId, page, state.pageSize)
+    const response = reuseSession && tab.queryId !== null
+      ? await api.fetchPage(tab.queryId, page, state.pageSize)
       : await api.startQuery(sql, state.pageSize);
-    if (!isCurrentQueryRequest(requestId)) {
+    if (!isCurrentQueryRequest(tab, requestId)) {
       if (!reuseSession) api.cancelQuery(response.query_id).catch(() => {});
       return;
     }
-    const result = response.result;
-    state.sql = sql;
-    state.page = page;
-    state.lastResult = result;
-    state.queryId = response.query_id;
-    state.queryRevision = response.workspace_revision;
-    state.totalRows = null; // reset; counted lazily below
-    renderGrid(ui.grid, result, page * state.pageSize);
-    setResultActionsEnabled(true);
-    updatePager();
-    setStatus(`${result.returned.toLocaleString()} rows on this page.`);
-    if (!reuseSession && previousQueryId !== null && previousQueryId !== state.queryId) {
+
+    tab.draftSql = sql;
+    tab.sql = sql;
+    tab.page = page;
+    tab.lastResult = response.result;
+    tab.queryId = response.query_id;
+    tab.queryRevision = response.workspace_revision;
+    if (!reuseSession) tab.totalRows = null;
+    setTabStatus(tab, `${response.result.returned.toLocaleString()} rows on this page.`);
+    if (tab === activeTab()) renderActiveTab();
+    updateWelcome();
+
+    if (!reuseSession && previousQueryId !== null && previousQueryId !== tab.queryId) {
       api.cancelQuery(previousQueryId).catch(() => {});
     }
-    refreshCount(state.queryId, state.queryRevision);
+    if (!reuseSession || tab.totalRows === null) {
+      refreshCount(tab, tab.queryId, tab.queryRevision);
+    }
   } catch (err) {
-    if (isCurrentQueryRequest(requestId)) showError(err);
+    if (isCurrentQueryRequest(tab, requestId)) showError(tab, err);
   }
 }
 
-// Count the full result lazily so the first page paints immediately.
-async function refreshCount(queryId, workspaceRevision) {
+async function refreshCount(tab, queryId, workspaceRevision) {
   try {
     const count = await api.countQuery(queryId);
     if (
-      state.queryId !== count.query_id ||
-      state.queryRevision !== workspaceRevision ||
+      !state.tabs.includes(tab) ||
+      tab.queryId !== count.query_id ||
+      tab.queryRevision !== workspaceRevision ||
       count.workspace_revision !== workspaceRevision
     ) return;
-    state.totalRows = count.total_rows;
-    updatePager();
+    tab.totalRows = count.total_rows;
+    if (tab === activeTab()) updatePager(tab);
   } catch {
-    // Non-fatal: leave totals unknown, pagination still works heuristically.
+    // Counting is non-fatal; full pages still expose forward pagination.
   }
 }
 
-function updatePager() {
-  ui.prev.disabled = !canGoPrev();
-  ui.next.disabled = !canGoNext();
-  const pageHuman = state.page + 1;
-  if (state.totalRows !== null) {
-    const pages = Math.max(1, Math.ceil(state.totalRows / state.pageSize));
+function updatePager(tab) {
+  ui.prev.disabled = !canGoPrev(tab);
+  ui.next.disabled = !canGoNext(tab);
+  if (!tab.lastResult) {
+    ui.pageLabel.textContent = "Page 1";
+    ui.pageInfo.textContent = "—";
+    return;
+  }
+  const pageHuman = tab.page + 1;
+  if (tab.totalRows !== null) {
+    const pages = Math.max(1, Math.ceil(tab.totalRows / state.pageSize));
     ui.pageLabel.textContent = `Page ${pageHuman} / ${pages}`;
-    ui.pageInfo.textContent = `${state.totalRows.toLocaleString()} rows total`;
+    ui.pageInfo.textContent = `${tab.totalRows.toLocaleString()} rows total`;
   } else {
     ui.pageLabel.textContent = `Page ${pageHuman}`;
     ui.pageInfo.textContent = "Counting…";
   }
 }
 
-// --- export --------------------------------------------------------------
 async function exportResults() {
-  if (!state.lastResult) return;
-  setBusy("Exporting");
+  const tab = activeTab();
+  if (!tab?.lastResult || tab.queryId === null) return;
+  setTabStatus(tab, "Exporting", "busy");
   try {
-    const info = await api.exportResults(state.queryId);
-    if (!info) return setStatus("Export cancelled.");
-    setStatus(`Saved ${info.format} to ${info.path}`);
+    const info = await api.exportResults(tab.queryId);
+    if (!info) setTabStatus(tab, "Export cancelled.");
+    else setTabStatus(tab, `Saved ${info.format} to ${info.path}`);
   } catch (err) {
-    showError(err);
-  }
-}
-
-function clearResults() {
-  state.lastResult = null;
-  state.totalRows = null;
-  if (state.queryId !== null) api.cancelQuery(state.queryId).catch(() => {});
-  state.queryId = null;
-  state.queryRevision = null;
-  renderEmpty(ui.grid, "Open a CSV or TSV file to get started.");
-  setResultActionsEnabled(false);
-  ui.pageInfo.textContent = "—";
-  ui.pageLabel.textContent = "Page 1";
-}
-
-function setResultActionsEnabled(enabled) {
-  ui.export.disabled = !enabled;
-  if (!enabled) {
-    ui.prev.disabled = true;
-    ui.next.disabled = true;
+    showError(tab, err);
   }
 }
 
 // --- event wiring --------------------------------------------------------
 ui.open.addEventListener("click", addFiles);
-ui.newWindow.addEventListener("click", () => api.newWindow().catch(showError));
 ui.welcomeOpen.addEventListener("click", addFiles);
-ui.welcomeNewWindow.addEventListener("click", () => api.newWindow().catch(showError));
 ui.welcomeQuit.addEventListener("click", () => api.quit());
-ui.run.addEventListener("click", () => runQuery(editor.getValue(), 0, false));
-ui.reset.addEventListener("click", () => {
-  const sql = previewSql();
-  state.autoSql = sql;
-  editor.setValue(sql);
-  runQuery(sql, 0, false);
+ui.newTab.addEventListener("click", () => addQueryTab());
+ui.run.addEventListener("click", () => {
+  const tab = activeTab();
+  if (tab) runQuery(tab, editor.getValue(), 0, false);
 });
-ui.prev.addEventListener("click", () => runQuery(state.sql, state.page - 1, true));
-ui.next.addEventListener("click", () => runQuery(state.sql, state.page + 1, true));
+ui.reset.addEventListener("click", () => {
+  const tab = activeTab();
+  if (!tab) return;
+  const sql = previewSql();
+  tab.autoSql = sql;
+  tab.draftSql = sql;
+  editor.setValue(sql);
+  runQuery(tab, sql, 0, false);
+});
+ui.prev.addEventListener("click", () => {
+  const tab = activeTab();
+  if (tab) runQuery(tab, tab.sql, tab.page - 1, true);
+});
+ui.next.addEventListener("click", () => {
+  const tab = activeTab();
+  if (tab) runQuery(tab, tab.sql, tab.page + 1, true);
+});
 ui.export.addEventListener("click", exportResults);
 
-// Per-file chip actions (event delegation: chips are re-rendered on every change).
-ui.files.addEventListener("click", (e) => {
-  const btn = e.target.closest(".file-chip-btn");
-  if (!btn) return;
-  if (btn.classList.contains("close")) closeFile(btn.dataset.path);
-  else if (btn.classList.contains("opts")) openReimport(btn.dataset.path);
+ui.tabs.addEventListener("click", (event) => {
+  const close = event.target.closest("[data-close-tab]");
+  if (close) {
+    event.stopPropagation();
+    removeQueryTab(close.dataset.closeTab);
+    return;
+  }
+  const item = event.target.closest("[data-tab-id]");
+  if (item) activateTab(item.dataset.tabId);
 });
 
+ui.tabs.addEventListener("keydown", (event) => {
+  const item = event.target.closest("[data-tab-id]");
+  if (!item || event.target.closest("[data-close-tab]")) return;
+  const index = state.tabs.findIndex((tab) => tab.id === item.dataset.tabId);
+  let nextIndex = null;
+  if (event.key === "ArrowRight") nextIndex = (index + 1) % state.tabs.length;
+  else if (event.key === "ArrowLeft") nextIndex = (index - 1 + state.tabs.length) % state.tabs.length;
+  else if (event.key === "Home") nextIndex = 0;
+  else if (event.key === "End") nextIndex = state.tabs.length - 1;
+  else if (event.key === "Enter" || event.key === " ") nextIndex = index;
+  if (nextIndex === null) return;
+  event.preventDefault();
+  const id = state.tabs[nextIndex].id;
+  activateTab(id);
+  ui.tabs.querySelector(`[data-tab-id="${id}"]`)?.focus();
+});
+
+ui.files.addEventListener("click", (event) => {
+  const button = event.target.closest(".file-chip-btn");
+  if (!button) return;
+  if (button.classList.contains("close")) closeFile(button.dataset.path);
+  else if (button.classList.contains("opts")) openReimport(button.dataset.path);
+});
+
+ui.optAbbreviation.addEventListener("input", () => {
+  ui.optAbbreviation.setCustomValidity("");
+});
 ui.dialog.addEventListener("close", () => {
   if (ui.dialog.returnValue === "apply") applyReimport();
   else reimportPath = null;
 });
 
-// Cmd/Ctrl+Enter to run is handled inside the editor (see editor.js).
-// Sync from the backend so a reloaded window restores its open files.
+window.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "t") {
+    event.preventDefault();
+    addQueryTab();
+  }
+});
+
+// The native File menu owns Cmd/Ctrl+W and targets the focused window. Keeping
+// tab cleanup here ensures the keyboard shortcut and close button share the
+// same query-session lifecycle.
+window.addEventListener("tablebase:close-query-tab", () => {
+  if (state.activeTabId) removeQueryTab(state.activeTabId);
+});
+
+renderTabs();
+renderActiveTab();
 syncEnv();
-setStatus("Ready. Open a CSV or TSV file to begin.");

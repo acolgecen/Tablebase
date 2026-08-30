@@ -10,12 +10,8 @@ import * as contract from "./contracts.js";
 
 // Tablebase needs only the invoke primitive. `withGlobalTauri` is disabled, so
 // the complete public Tauri API is not injected into the page.
-const invoke = window.__TAURI_INTERNALS__.invoke;
-
-/** Open a brand-new, independent window with its own empty environment. */
-export function newWindow() {
-  return invoke("new_window");
-}
+const invoke = window.__TAURI_INTERNALS__?.invoke ?? (() =>
+  Promise.reject(new Error("Tablebase commands are available only in the desktop app.")));
 
 /** Open a native (multi-select) picker and add the files to this window. Resolves to EnvironmentInfo. */
 export function addFiles() {

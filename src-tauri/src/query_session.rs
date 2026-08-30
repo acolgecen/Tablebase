@@ -11,8 +11,6 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
-const MAX_SESSIONS_PER_WINDOW: usize = 8;
-
 pub struct QueryManager {
     next_id: AtomicU64,
     sessions: Mutex<HashMap<(String, u64), Arc<QuerySession>>>,
@@ -55,18 +53,6 @@ impl QueryManager {
             .lock()
             .map_err(|_| AppError::lock_poisoned())?;
         sessions.insert((window.to_string(), id), session.clone());
-
-        let mut window_ids = sessions
-            .keys()
-            .filter_map(|(label, id)| (label == window).then_some(*id))
-            .collect::<Vec<_>>();
-        window_ids.sort_unstable();
-        let excess = window_ids.len().saturating_sub(MAX_SESSIONS_PER_WINDOW);
-        for old_id in window_ids.into_iter().take(excess) {
-            if let Some(old) = sessions.remove(&(window.to_string(), old_id)) {
-                old.cancel();
-            }
-        }
         Ok(session)
     }
 

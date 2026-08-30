@@ -117,9 +117,10 @@ function setCaretOffset(el, offset) {
 /**
  * Wire up the editor inside `root` (which must contain a `.sql-input`
  * contenteditable element). `onRun` fires on Cmd/Ctrl+Enter.
+ * `onChange` receives the current plain-text SQL after user edits.
  * Returns { getValue, setValue, focus }.
  */
-export function createEditor(root, { onRun } = {}) {
+export function createEditor(root, { onRun, onChange } = {}) {
   const ed = root.querySelector(".sql-input");
   let composing = false; // don't repaint mid-IME-composition
 
@@ -133,6 +134,7 @@ export function createEditor(root, { onRun } = {}) {
   ed.addEventListener("input", () => {
     if (composing) return;
     paint();
+    onChange?.(ed.textContent);
   });
   ed.addEventListener("compositionstart", () => {
     composing = true;
@@ -140,6 +142,7 @@ export function createEditor(root, { onRun } = {}) {
   ed.addEventListener("compositionend", () => {
     composing = false;
     paint();
+    onChange?.(ed.textContent);
   });
 
   ed.addEventListener("keydown", (e) => {

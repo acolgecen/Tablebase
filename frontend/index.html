@@ -43,6 +43,13 @@
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <path d="M3 8h18M8 14h5M8 17h8" />
         </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="i-table" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M3 9h18M9 9v11" />
+        </symbol>
         <symbol id="i-close" viewBox="0 0 24 24">
           <path d="M6 6l12 12M18 6L6 18" />
         </symbol>
@@ -65,13 +72,6 @@
               <span class="welcome-action-sub">Add one or more CSV/TSV files to this window</span>
             </span>
           </button>
-          <button id="welcome-newwindow" class="welcome-action">
-            <svg class="ico"><use href="#i-window" /></svg>
-            <span class="welcome-action-text">
-              <span class="welcome-action-title">New window</span>
-              <span class="welcome-action-sub">A separate, independent environment</span>
-            </span>
-          </button>
           <button id="welcome-quit" class="welcome-action">
             <svg class="ico"><use href="#i-power" /></svg>
             <span class="welcome-action-text">
@@ -83,21 +83,16 @@
       </div>
     </div>
 
-    <!-- Single merged toolbar: brand + file actions on the left, query actions on the right. -->
+    <!-- Query tabs occupy the top navigation; files live in the left sidebar. -->
     <header class="toolbar">
       <div class="brand">
         <img class="brand-logo" src="logo.png" alt="" />
         <span>Tablebase</span>
       </div>
-      <button id="open-btn" class="btn" title="Add one or more CSV/TSV files to this window">
-        <svg class="ico"><use href="#i-open" /></svg>Open
+      <div id="query-tabs" class="query-tabs" role="tablist" aria-label="Queries"></div>
+      <button id="new-tab-btn" class="btn icon-btn new-tab-btn" title="New query tab (⌘T)" aria-label="New query tab">
+        <svg class="ico"><use href="#i-plus" /></svg>
       </button>
-      <button id="newwindow-btn" class="btn icon-btn" title="New window (separate environment)">
-        <svg class="ico"><use href="#i-window" /></svg>
-      </button>
-      <div id="files" class="files"></div>
-
-      <div class="spacer"></div>
 
       <button id="reset-btn" class="btn" title="Preview table (reset query)">
         <svg class="ico"><use href="#i-preview" /></svg>Reset
@@ -107,48 +102,59 @@
       </button>
     </header>
 
-    <!-- SQL editor -->
-    <section class="editor-pane">
-      <!-- Single contenteditable layer: caret lives in the highlighted text. -->
-      <div class="editor" id="editor">
-        <pre
-          id="sql"
-          class="sql-input"
-          contenteditable="plaintext-only"
-          spellcheck="false"
-          autocapitalize="off"
-          data-placeholder="SELECT * FROM data WHERE …"
-        ></pre>
-      </div>
-    </section>
-
-    <!-- Draggable splitter: resize the editor vs the results -->
-    <div class="splitter" id="splitter" title="Drag to resize the editor"></div>
-
-    <!-- Results toolbar -->
-    <section class="results-bar">
-      <div id="page-info" class="muted">—</div>
-      <div class="spacer"></div>
-      <div class="pager">
-        <button id="prev-btn" class="btn icon-btn" title="Previous page" disabled>
-          <svg class="ico"><use href="#i-prev" /></svg>
+    <div class="workspace">
+      <aside class="file-sidebar" aria-label="Open files">
+        <div class="sidebar-heading">
+          <div class="sidebar-title"><svg class="ico"><use href="#i-table" /></svg>Files</div>
+          <span id="file-count" class="file-count">0</span>
+        </div>
+        <button id="open-btn" class="btn sidebar-open" title="Add one or more CSV/TSV files to this window">
+          <svg class="ico"><use href="#i-open" /></svg>Add files…
         </button>
-        <span id="page-label" class="muted">Page 1</span>
-        <button id="next-btn" class="btn icon-btn" title="Next page" disabled>
-          <svg class="ico"><use href="#i-next" /></svg>
-        </button>
-      </div>
-      <div class="export">
-        <button id="export-btn" class="btn" title="Save results as CSV" disabled>
-          <svg class="ico"><use href="#i-export" /></svg>Save CSV
-        </button>
-      </div>
-    </section>
+        <div id="files" class="files"></div>
+        <p class="sidebar-help">Use the table name shown on each file in your SQL.</p>
+      </aside>
 
-    <!-- Results grid -->
-    <main id="grid" class="grid">
-      <div class="empty-state muted">Open a CSV or TSV file to get started.</div>
-    </main>
+      <div class="workbench">
+        <section class="editor-pane" aria-label="SQL editor">
+          <div class="editor" id="editor">
+            <pre
+              id="sql"
+              class="sql-input"
+              contenteditable="plaintext-only"
+              spellcheck="false"
+              autocapitalize="off"
+              data-placeholder="SELECT * FROM data WHERE …"
+            ></pre>
+          </div>
+        </section>
+
+        <div class="splitter" id="splitter" title="Drag to resize the editor"></div>
+
+        <section class="results-bar">
+          <div id="page-info" class="muted">—</div>
+          <div class="spacer"></div>
+          <div class="pager">
+            <button id="prev-btn" class="btn icon-btn" title="Previous page" disabled>
+              <svg class="ico"><use href="#i-prev" /></svg>
+            </button>
+            <span id="page-label" class="muted">Page 1</span>
+            <button id="next-btn" class="btn icon-btn" title="Next page" disabled>
+              <svg class="ico"><use href="#i-next" /></svg>
+            </button>
+          </div>
+          <div class="export">
+            <button id="export-btn" class="btn" title="Save results as CSV" disabled>
+              <svg class="ico"><use href="#i-export" /></svg>Save CSV
+            </button>
+          </div>
+        </section>
+
+        <main id="grid" class="grid">
+          <div class="empty-state muted">Open a CSV or TSV file to get started.</div>
+        </main>
+      </div>
+    </div>
 
     <!-- Status / errors -->
     <footer id="status" class="status"></footer>

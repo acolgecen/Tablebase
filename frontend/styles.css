@@ -42,8 +42,8 @@ html, body {
 
 body {
   display: grid;
-  /* toolbar | editor (resizable) | splitter | results-bar | grid | status */
-  grid-template-rows: auto var(--editor-h) 7px auto 1fr auto;
+  /* query navigation | file sidebar + workbench | status */
+  grid-template-rows: auto minmax(0, 1fr) auto;
   height: 100vh;
   overflow: hidden;
 }
@@ -72,7 +72,8 @@ body.resizing .editor textarea { pointer-events: none; }
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  min-width: 0;
+  padding: 7px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -82,7 +83,7 @@ body.resizing .editor textarea { pointer-events: none; }
   gap: 7px;
   font-weight: 700;
   letter-spacing: 0.3px;
-  margin-right: 4px;
+  margin-right: 8px;
 }
 .brand-logo {
   width: 20px;
@@ -90,39 +91,173 @@ body.resizing .editor textarea { pointer-events: none; }
   border-radius: 5px;
   filter: drop-shadow(0 0 4px var(--accent-glow));
 }
-/* Open-files bar: one chip per file, showing its SQL table name. */
-.files {
+/* Query tabs live in the former file-chip strip. */
+.query-tabs {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  align-self: stretch;
+  gap: 3px;
+  flex: 1;
+  min-width: 80px;
   overflow-x: auto;
   scrollbar-width: thin;
 }
-.files:empty::before {
-  content: "No file open";
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 12px;
-}
-.file-chip {
+.query-tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
+  flex: 0 1 190px;
+  min-width: 110px;
+  max-width: 220px;
+  padding: 5px 6px 5px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+.query-tab:hover { color: var(--text); background: var(--panel-2); }
+.query-tab.active {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--border);
+  box-shadow: inset 0 -2px var(--accent);
+}
+.query-tab:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.query-tab-state {
+  width: 6px;
+  height: 6px;
   flex: none;
-  padding: 3px 4px 3px 9px;
+  border-radius: 50%;
+  background: var(--border);
+}
+.query-tab.has-results .query-tab-state { background: var(--accent); }
+.query-tab.busy .query-tab-state {
+  background: var(--accent);
+  box-shadow: 0 0 7px var(--accent-glow);
+  animation: tab-pulse 1s ease-in-out infinite;
+}
+@keyframes tab-pulse { 50% { opacity: 0.35; } }
+.query-tab-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+.query-tab-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.query-tab-close:hover { color: var(--danger); background: var(--border); }
+.query-tab-close .ico { width: 12px; height: 12px; }
+.new-tab-btn { flex: none; }
+
+/* Main two-column workspace. */
+.workspace {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  min-height: 0;
+}
+.file-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 10px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+.sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sidebar-title .ico { width: 14px; height: 14px; }
+.file-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--panel-2);
+  font: 11px var(--mono);
+  text-align: center;
+}
+.sidebar-open { justify-content: center; width: 100%; padding-block: 7px; }
+.sidebar-help {
+  margin: auto 4px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.workbench {
+  display: grid;
+  grid-template-rows: var(--editor-h) 7px auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Open files are vertical cards in the sidebar. */
+.files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.files:empty::before {
+  content: "No files open";
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px 4px;
+}
+.file-chip {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "name opts close" "table table table";
+  align-items: center;
+  gap: 5px;
+  padding: 8px;
   background: var(--panel-2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
 }
+.file-chip:hover { border-color: rgba(46, 232, 106, 0.55); }
 .file-chip-name {
+  grid-area: name;
   font-size: 12px;
-  max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .file-chip-table {
+  grid-area: table;
+  justify-self: start;
   font-family: var(--mono);
   font-size: 11px;
   color: var(--accent-ink);
@@ -130,6 +265,8 @@ body.resizing .editor textarea { pointer-events: none; }
   border-radius: 4px;
   padding: 1px 5px;
 }
+.file-chip-btn.opts { grid-area: opts; }
+.file-chip-btn.close { grid-area: close; }
 .file-chip-btn {
   display: inline-flex;
   align-items: center;

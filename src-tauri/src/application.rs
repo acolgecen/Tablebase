@@ -186,4 +186,30 @@ mod tests {
         drop(state);
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn query_sessions_persist_until_explicitly_cancelled() {
+        let (root, state, source) = setup("persistent_sessions");
+        add_paths(&state, "main", vec![source]).unwrap();
+        let first = start_query(&state, "main", "SELECT * FROM data", 10).unwrap();
+        for id in 0..12 {
+            start_query(
+                &state,
+                "main",
+                &format!("SELECT * FROM data WHERE id >= {id}"),
+                10,
+            )
+            .unwrap();
+        }
+        assert_eq!(
+            count_query(&state, "main", first.query_id)
+                .unwrap()
+                .total_rows,
+            2
+        );
+        cancel_query(&state, "main", first.query_id);
+        assert!(count_query(&state, "main", first.query_id).is_err());
+        drop(state);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

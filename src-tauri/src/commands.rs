@@ -5,8 +5,11 @@ use crate::application;
 use crate::error::{AppError, AppResult};
 use crate::model::{EnvironmentInfo, ExportInfo, ImportOptions, QueryCount, QueryPage};
 use crate::state::AppState;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+static QUIT_CONFIRMATION_OPEN: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
 pub async fn add_files(app: AppHandle, window: WebviewWindow) -> AppResult<EnvironmentInfo> {
@@ -162,8 +165,30 @@ pub fn new_window(app: AppHandle) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub async fn quit(app: AppHandle) {
-    app.exit(0);
+pub fn quit(app: AppHandle) {
+    request_quit(app);
+}
+
+/// Ask once before destroying every window and its retained query tabs.
+pub fn request_quit(app: AppHandle) {
+    if QUIT_CONFIRMATION_OPEN.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let dialog_app = app.clone();
+    app.dialog()
+        .message("Are you sure you want to quit? All open query tabs and results will be closed.")
+        .title("Quit Tablebase?")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            "Quit".into(),
+            "Cancel".into(),
+        ))
+        .show(move |confirmed| {
+            QUIT_CONFIRMATION_OPEN.store(false, Ordering::Release);
+            if confirmed {
+                dialog_app.exit(0);
+            }
+        });
 }
 
 fn normalized_page_size(state: &AppState, page_size: Option<u64>) -> u64 {
